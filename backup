@@ -1,0 +1,387 @@
+#!/bin/bash
+
+# Copyright 2004-2024 poc@pocnet.net
+#
+# This file is for making backups of Linux boxen onto another host.
+#
+# Backup is free software; you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# Backup is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# Backup; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
+# Suite 330, Boston, MA 02111-1307 USA or get it at
+# http://www.gnu.org/licenses/gpl.html
+#
+
+# Unset nasty vars
+unset LANG LANGUAGE TAPE CHANGER
+
+# Set defaults
+NOEJECT=0
+DO_LOCK=0
+
+# Our date for the file timestamp.
+DATE=`date +%Y%m%d`
+
+
+# Parse options: Horrible with shell
+NEXT_IS_END=0
+#
+OPTSTRING=`getopt "ln" $*`
+test $? -ne 0 && exit
+for OPTION in ${OPTSTRING}; do
+	if [ ${NEXT_IS_END} -eq 1 ]; then
+		CMDLEVEL=$OPTION
+		NEXT_IS_END=0
+	fi
+
+	case "${OPTION}" in
+		"-l")
+			DO_LOCK=1
+		;;
+		"-n")
+			NOEJECT=1
+		;;
+		"--")
+			NEXT_IS_END=1
+		;;
+	esac
+done
+
+unset NEXT_IS_END
+
+
+# Automatically determine the dump level.
+if [ -z "${1}" ]; then
+	LEVEL=`date +%w`
+	LEVEL=$(( LEVEL + 1 ))
+else
+	LEVEL="${CMDLEVEL}"
+	unset CMDLEVEL
+fi
+
+
+# Look for our preferences, level specific or generic or internal
+for PREFSFILE in "${HOME}/.backuprc-${HOSTNAME}-${LEVEL}" \
+			"${HOME}/.backuprc-${HOSTNAME}" \
+			"${HOME}/.backuprc-${LEVEL}" \
+			"${HOME}/.backuprc"; do
+	if [ -r "${PREFSFILE}" ]; then
+		echo "  DUMP: Using ${PREFSFILE} as preference source."
+		. ${PREFSFILE}
+		break;
+	fi
+done
+
+
+# Sanitychecks
+if [ -z "${TOPATH}" -a -z "${TAPEDEV}" ]; then
+	echo "  DUMP: Don't know destination path (TOPATH) or destination device (TAPEDEV). Missing .backuprc?"
+	exit 1
+fi
+if [ ! -z "${TOPATH}" -a ! -z "${TAPEDEV}" ]; then
+	echo "  DUMP: Must choose between TOPATH for file based backup and TAPEDEV for tape backup."
+	exit 1
+fi
+if [ "${TOHOST}" != "localhost" -a ! -z "${TOHOST}" ]; then
+	if [ "${RSH}" != "ssh" -a "${RSH}" != "rsh" ]; then
+		echo "  DUMP: Don't know connection method (RSH). Should be one of rsh or ssh."
+		exit 1
+	fi
+	if [ "${RSH}" = "ssh" -a -z "${BACKUPUSER}" ]; then
+		echo "  DUMP: Must have a backupuser for ssh (BACKUPUSER)."
+		exit 1
+	fi
+fi
+
+
+# Process compression flags
+if [ -z "${COMPRESS}" ]; then
+	echo "  DUMP: Didn't find compression level (COMPRESS). Using default 0."
+	COMPRESS=0
+fi
+if [ ${COMPRESS} -gt 0 ]; then
+	COMPRESSFLAGS="-z${COMPRESS}"
+	echo "  DUMP: Using compression level ${COMPRESS}."
+else
+	COMPRESSFLAGS=""
+	echo "  DUMP: Not using compression."
+fi
+unset COMPRESS
+
+
+# Process blocksize flags
+if [ -z "${BLOCKSIZE}" ]; then
+	echo "  DUMP: Didn't find BLOCKSIZE. Using default."
+	BLOCKSIZE=0
+fi
+if [ ${BLOCKSIZE} -gt 0 ]; then
+	BLOCKSIZEFLAG="-b${BLOCKSIZE}"
+fi
+unset BLOCKSIZE
+
+
+# Read in changer stuff
+if [ ! -z "${CHANGEDEV}" ]; then
+	if [ "${TOHOST}" = "localhost" -o -z "${TOHOST}" ]; then
+		echo "  DUMP: Changing tapes via ${CHANGEDEV}."
+	else
+		echo "  DUMP: Changing tapes via ${CHANGEDEV} on host ${TOHOST}."
+	fi
+fi
+
+
+# SSH-Keyfile - for automatic logins
+if [ ! -z "${SSHKEYFILE}" -a "${RSH}" = "ssh" ]; then
+		if [ ! -f "${SSHKEYFILE}" ]; then
+				echo "  DUMP: Ssh-Keyfile not found. Continuing without it."
+		else
+				SSHKEYFLAG="-i ${SSHKEYFILE}"
+		fi
+fi
+unset SSHKEYFILE
+
+
+# Export variables
+test ! -z "${BLOCKSIZEFLAG}" && export BLOCKSIZEFLAG
+test ! -z "${CHANGEDEV}" && export CHANGEDEV
+test ! -z "${COMPRESSFLAGS}" && export COMPRESSFLAGS
+test ! -z "${LEVEL}" && export LEVEL
+test ! -z "${RSH}" && export RSH
+test ! -z "${SSHKEYFLAG}" && export SSHKEYFLAG
+test ! -z "${TAPEDEV}" && export TAPEDEV
+test ! -z "${TOHOST}" && export TOHOST
+test ! -z "${TOPATH}" && export TOPATH
+
+
+# Now do the thing
+if [ ! -z "${TOPATH}" ]; then
+	# Loop thru fstab
+	grep -v -e '^#' -e '^$' /etc/fstab |while read DEV MOUNTPOINT FSTYPE OPTS DUMP FSCK; do
+		# If Mountpoints arenn't devices, we need to find out these first
+		if echo ${DEV} |grep -q '^LABEL='; then
+			DEVLINKBYLABEL="/dev/disk/by-label/`echo ${DEV} |sed 's/^LABEL=//'`"
+			if [ -L "${DEVLINKBYLABEL}" ]; then
+					LINKDEST="`file -b ${DEVLINKBYLABEL} |sed 's/^symbolic link to \([[:print:]]\+\)$/\1/'`"
+					DEV="`dirname \"${DEVLINKBYLABEL}\"`/${LINKDEST}"
+			else
+					echo "Error: Could not resolve device by label: ${DEV}."
+					continue
+			fi
+			unset DEVLINKBYLABEL
+		elif echo ${DEV} |grep -q '^UUID='; then
+			DEVLINKBYUUID="/dev/disk/by-uuid/`echo ${DEV} |sed 's/^UUID=//'`"
+			if [ -L "${DEVLINKBYUUID}" ]; then
+					LINKDEST="`file -b ${DEVLINKBYUUID} |sed 's/^symbolic link to \([[:print:]]\+\)$/\1/'`"
+					DEV="`dirname \"${DEVLINKBYUUID}\"`/${LINKDEST}"
+			else
+					echo "Error: Could not resolve device by uuid: ${DEV}."
+					continue
+			fi
+			unset DEVLINKBYUUID
+		fi
+
+		# Now we can decide how to proceed
+		if [ ${DUMP} -gt 0 -a \( ${FSTYPE} = "ext2" -o ${FSTYPE} = "ext3" -o ${FSTYPE} = "ext4" \) ]; then
+
+			# Set appropriate filename
+			LABEL="`/sbin/e2label ${DEV}`"
+			if [ -z "${LABEL}" ]; then
+				if [ ${MOUNTPOINT} = "/" ]; then
+					DIRNAME="root"
+				else
+					DIRNAME=`echo ${MOUNTPOINT} |sed 's#/#_#g' |cut -b 2-`
+				fi
+			else
+				DIRNAME="${LABEL}"
+			fi
+			TOFILE="${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}/dump-${LEVEL}-${DATE}"
+			if [ "${DO_LOCK}" -eq 1 ]; then
+				LOCKTO="${TOFILE}.lock"
+            fi
+
+
+			# Look if there's any pre/post-work to do
+			if [ -f ${MOUNTPOINT}/.backup-todo ]; then
+				echo "  DUMP: .backup-todo found."
+				sh ${MOUNTPOINT}/.backup-todo pre || echo "  DUMP: .backup-todo reported error."
+			fi
+
+
+			RSHDOIT="test ! -d ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME} && mkdir -p ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}"
+			if [ "${DO_LOCK}" -eq 1 ]; then
+				SETLOCK="touch ${LOCKTO}"
+				RMVLOCK="rm ${LOCKTO}"
+			fi
+			if [ "${TOHOST}" = "localhost" -o -z "${TOHOST}" ]; then
+				bash -c "${RSHDOIT}"
+				if [ "${DO_LOCK}" -eq 1 ]; then
+					bash -c "${SETLOCK}"
+				fi
+				/sbin/dump -${LEVEL}au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f ${TOFILE} ${DEV}
+				if [ "${DO_LOCK}" -eq 1 ]; then
+					bash -c "${RMVLOCK}"
+				fi
+			else
+				if [ -z "${BACKUPUSER}" ]; then
+					echo "${RSHDOIT}" |${RSH} ${SSHKEYFLAG} ${TOHOST} "/bin/sh"
+					if [ "${DO_LOCK}" -eq 1 ]; then
+						echo "${SETLOCK}" |${RSH} ${SSHKEYFLAG} ${TOHOST} "/bin/sh"
+					fi
+					/sbin/dump -${LEVEL}au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
+						|${RSH} ${SSHKEYFLAG} ${TOHOST} "cat > ${TOFILE}"
+					if [ "${DO_LOCK}" -eq 1 ]; then
+						echo "${RMVLOCK}" |${RSH} ${SSHKEYFLAG} ${TOHOST} "/bin/sh"
+					fi
+				else
+					echo "${RSHDOIT}" |${RSH} ${SSHKEYFLAG} -l ${BACKUPUSER} ${TOHOST} "/bin/sh"
+					if [ "${DO_LOCK}" -eq 1 ]; then
+						echo "${SETLOCK}" |${RSH} ${SSHKEYFLAG} -l ${BACKUPUSER} ${TOHOST} "/bin/sh"
+					fi
+					/sbin/dump -${LEVEL}au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
+						|${RSH} -l ${BACKUPUSER} ${SSHKEYFLAG} ${TOHOST} "cat > ${TOFILE}"
+					if [ "${DO_LOCK}" -eq 1 ]; then
+						echo "${RMVLOCK}" |${RSH} ${SSHKEYFLAG} -l ${BACKUPUSER} ${TOHOST} "/bin/sh"
+					fi
+				fi
+			fi
+			echo "  DUMP: ###############################################################"
+
+			if [ -f ${MOUNTPOINT}/.backup-todo ]; then
+				sh ${MOUNTPOINT}/.backup-todo post || echo "  DUMP: .backup-todo reported error."
+			fi
+
+		fi
+	done
+elif [ ! -z "${TAPEDEV}" ]; then
+	# Do tape based backup
+	if [ ! -z "${CHANGEDEV}" ]; then
+		# Do a self-contained tape change script
+		export TMPFILE=`mktemp`
+		chmod +x "${TMPFILE}"
+		if [ "${TOHOST}" = "localhost" -o -z "${TOHOST}" ]; then
+			# For local tape device
+			cat > ${TMPFILE} <<-EOF
+				#!/bin/bash
+				mt -f ${TAPEDEV} offl
+				sleep 10
+
+				if [ "$2" -eq 7 -o "$2" -eq 15 ]; then
+					echo "Waiting for manual tape change. Press return to continue."
+					/usr/sbin/mtx -f ${CHANGEDEV} unload
+					read tmp
+				else
+					/usr/sbin/mtx ${CHANGEDEV} next
+					sleep 120
+				fi
+				exit 0
+			EOF
+		else
+			# For remote tape device
+			if [ ! -z "${BACKUPUSER}" ]; then
+				REMOTEFLAGS=" ${SSHKEYFLAG} -l ${BACKUPUSER}"
+			fi
+			cat > ${TMPFILE} <<-EOF
+				#!/bin/bash
+				echo "mt -f ${TAPEDEV} offline" |${RSH} ${REMOTEFLAGS} ${TAPEHOST} "/bin/sh"
+				sleep 10
+
+				if [ "\$2" -eq 7 -o "\$2" -eq 15 ]; then
+					echo "Waiting for manual tape change. Press return to continue."
+					echo "/usr/sbin/mtx -f ${CHANGEDEV} unload" |${RSH} ${REMOTEFLAGS} ${TAPEHOST} "/bin/sh"
+					read tmp
+				else
+					echo "/usr/sbin/mtx ${CHANGEDEV} next; sleep 120" |${RSH} ${REMOTEFLAGS} ${TAPEHOST} "/bin/sh"
+				fi
+				exit 0
+			EOF
+		fi
+	fi
+
+	# We need $TAPE to function properly
+	if [ "${TOHOST}" = "localhost" -o -z "${TOHOST}" ]; then
+		export TAPE="${TAPEDEV}"
+	else
+		if [ -z "${BACKUPUSER}" ]; then
+			export TAPE="${TOHOST}:${TAPEDEV}"
+		else
+			export TAPE="${BACKUPUSER}@${TOHOST}:${TAPEDEV}"
+		fi
+	fi
+
+	# Call dump appropriately
+	grep -v -e '^#' -e '^$' /etc/fstab |while read DEV MOUNTPOINT FSTYPE OPTS DUMP FSCK; do
+		# If Mountpoints arenn't devices, we need to find out these first
+		if echo ${DEV} |grep -q '^LABEL='; then
+			DEVLINKBYLABEL="/dev/disk/by-label/`echo ${DEV} |sed 's/^LABEL=//'`"
+			if [ -L "${DEVLINKBYLABEL}" ]; then
+					LINKDEST="`file -b ${DEVLINKBYLABEL} |sed 's/^symbolic link to .\([[:print:]]\+\).$/\1/'`"
+					DEV="`dirname \"${DEVLINKBYLABEL}\"`/${LINKDEST}"
+			else
+					echo "Error: Could not resolve device by label: ${DEV}."
+					continue
+			fi
+			unset DEVLINKBYLABEL
+		elif echo ${DEV} |grep -q '^UUID='; then
+			DEVLINKBYUUID="/dev/disk/by-uuid/`echo ${DEV} |sed 's/^UUID=//' |dd conv=lcase 2>/dev/null`"
+			if [ -L "${DEVLINKBYUUID}" ]; then
+					LINKDEST="`file -b ${DEVLINKBYUUID} |sed 's/^symbolic link to .\([[:print:]]\+\).$/\1/'`"
+					DEV="`dirname \"${DEVLINKBYUUID}\"`/${LINKDEST}"
+			else
+					echo "Error: Could not resolve device by label: ${DEV}."
+					continue
+			fi
+			unset DEVLINKBYUUID
+		fi
+
+		# Not we can decide how to proceed
+		if [ ${DUMP} -gt 0 -a \( ${FSTYPE} = "ext2" -o ${FSTYPE} = "ext3" -o ${FSTYPE} = "ext4" \) ]; then
+			if [ -f ${MOUNTPOINT}/.backup-todo ]; then
+				echo "  DUMP: .backup-todo found."
+				sh ${MOUNTPOINT}/.backup-todo pre || echo "  DUMP: .backup-todo reported error."
+			fi
+			if [ -z "${CHANGEDEV}" ]; then
+				/sbin/dump -${LEVEL}au -a ${BLOCKSIZEFLAG} ${COMPRESSFLAGS} ${DEV}
+				echo "  DUMP: ###############################################################"
+			else
+				/sbin/dump -${LEVEL}au -a ${BLOCKSIZEFLAG} ${COMPRESSFLAGS} -F ${TMPFILE} ${DEV}
+				echo "  DUMP: ###############################################################"
+			fi
+			if [ -f ${MOUNTPOINT}/.backup-todo ]; then
+				sh ${MOUNTPOINT}/.backup-todo post || echo "  DUMP: .backup-todo reported error."
+			fi
+		fi
+	done
+
+	# Provide a little bit of grace time
+	sleep 3
+
+	# Cleanup: Unload tapes
+	if [ "${NOEJECT}" -eq 0 ]; then
+			if [ -z "${TOHOST}" ]; then
+				mt -f ${TAPEDEV} offline
+				if [ ! -z "${CHANGEDEV}" ]; then
+					/usr/sbin/mtx -f ${CHANGEDEV} unload
+				fi
+			else
+				echo "mt -f ${TAPEDEV} offline" |${RSH} ${REMOTEFLAGS} ${TOHOST} "/bin/sh"
+				if [ ! -z "${CHANGEDEV}" ]; then
+					echo "/usr/sbin/mtx -f ${CHANGEDEV} unload" |${RSH} ${REMOTEFLAGS} ${TOHOST} "/bin/sh"
+				fi
+			fi
+	fi
+
+	# Delete temps
+	if [ ! -z "${TMPFILE}" ]; then
+		rm -f "${TMPFILE}"
+	fi
+fi
+
+# EOF
+# vim:tabstop=4:shiftwidth=4:autoindent

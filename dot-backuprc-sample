@@ -1,0 +1,14 @@
+# To which host should we dump.
+TOHOST=leela.pocnet.net
+# Basepath under which we lay out our structure (make it as short as possible!)
+TOPATH=/home/remback
+# Which command should be used for dumping. Choose from rsh (or empty) and ssh.
+RSH=rsh
+# Login as this user.
+BACKUPUSER=remback
+# Compression Level (0-9)
+COMPRESS=1
+# Tape and Changer Device - use these *OR* TOPATH, backup will complain with both
+TAPEDEV=/dev/nst2
+CHANGEDEV=/dev/sg3
+BLOCKSIZE=64

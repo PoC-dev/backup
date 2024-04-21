@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Copyright 2004-2024 poc@pocnet.net
+#
+# This file is for cleaning backups done by the accompanying backup script.
+#
+# This is free software; you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# It is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# Backup; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
+# Suite 330, Boston, MA 02111-1307 USA or get it at
+# http://www.gnu.org/licenses/gpl.html
+#
+
+if [ -z "${1}" ]; then
+	echo "Please give the base path (TOPATH) for the backups as parameter."
+	exit 1
+fi
+
+cd "${1}" || {
+	echo "Directory ${1} inaccessible."
+	exit 1
+}
+
+df -h .
+find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read HOSTDIR; do
+	if cd ${HOSTDIR}/dumps 2>/dev/null; then
+		find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read PARTDIR; do
+			cd ${PARTDIR}
+			LASTFULLFILE=`find . -type f -a -name "*dump-0-*.gz" -o -name "*dump-0-*" |cut -b 3- |sort |tail -1`
+			if [ ! -z "${LASTFULLFILE}" ]; then
+				find . -type f -a ! -newer ${LASTFULLFILE} -a ! -name ${LASTFULLFILE} -exec rm -f {} \;
+			fi
+			cd ../
+		done
+		cd ../../
+	fi
+done
+df -h .
+
+# -EOF-
