@@ -24,16 +24,15 @@ unset LANG LANGUAGE TAPE CHANGER
 
 # Set defaults
 NOEJECT=0
-DO_LOCK=0
+DO_DONE=0
 
 # Our date for the file timestamp.
 DATE=`date +%Y%m%d`
 
-
 # Parse options: Horrible with shell
 NEXT_IS_END=0
 #
-OPTSTRING=`getopt "ln" $*`
+OPTSTRING=`getopt "dn" $*`
 test $? -ne 0 && exit
 for OPTION in ${OPTSTRING}; do
 	if [ ${NEXT_IS_END} -eq 1 ]; then
@@ -42,8 +41,8 @@ for OPTION in ${OPTSTRING}; do
 	fi
 
 	case "${OPTION}" in
-		"-l")
-			DO_LOCK=1
+		"-d")
+			DO_DONE=1
 		;;
 		"-n")
 			NOEJECT=1
@@ -164,7 +163,7 @@ test ! -z "${TOPATH}" && export TOPATH
 if [ ! -z "${TOPATH}" ]; then
 	# Loop thru fstab
 	grep -v -e '^#' -e '^$' /etc/fstab |while read DEV MOUNTPOINT FSTYPE OPTS DUMP FSCK; do
-		# If Mountpoints arenn't devices, we need to find out these first
+		# If Mountpoints aren't devices, we need to find out these first
 		if echo ${DEV} |grep -q '^LABEL='; then
 			DEVLINKBYLABEL="/dev/disk/by-label/`echo ${DEV} |sed 's/^LABEL=//'`"
 			if [ -L "${DEVLINKBYLABEL}" ]; then
@@ -202,9 +201,6 @@ if [ ! -z "${TOPATH}" ]; then
 				DIRNAME="${LABEL}"
 			fi
 			TOFILE="${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}/dump-${LEVEL}-${DATE}"
-			if [ "${DO_LOCK}" -eq 1 ]; then
-				LOCKTO="${TOFILE}.lock"
-            fi
 
 
 			# Look if there's any pre/post-work to do
@@ -215,39 +211,30 @@ if [ ! -z "${TOPATH}" ]; then
 
 
 			RSHDOIT="test ! -d ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME} && mkdir -p ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}"
-			if [ "${DO_LOCK}" -eq 1 ]; then
-				SETLOCK="touch ${LOCKTO}"
-				RMVLOCK="rm ${LOCKTO}"
+			if [ "${DO_DONE}" -eq 1 ]; then
+				DONEFILE="${TOFILE}.done"
+				SETDONE="touch ${DONEFILE}"
 			fi
 			if [ "${TOHOST}" = "localhost" -o -z "${TOHOST}" ]; then
 				bash -c "${RSHDOIT}"
-				if [ "${DO_LOCK}" -eq 1 ]; then
-					bash -c "${SETLOCK}"
-				fi
 				/sbin/dump -${LEVEL}au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f ${TOFILE} ${DEV}
-				if [ "${DO_LOCK}" -eq 1 ]; then
-					bash -c "${RMVLOCK}"
+				if [ "${DO_DONE}" -eq 1 ]; then
+					bash -c "${SETDONE}"
 				fi
 			else
 				if [ -z "${BACKUPUSER}" ]; then
 					echo "${RSHDOIT}" |${RSH} ${SSHKEYFLAG} ${TOHOST} "/bin/sh"
-					if [ "${DO_LOCK}" -eq 1 ]; then
-						echo "${SETLOCK}" |${RSH} ${SSHKEYFLAG} ${TOHOST} "/bin/sh"
-					fi
 					/sbin/dump -${LEVEL}au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
 						|${RSH} ${SSHKEYFLAG} ${TOHOST} "cat > ${TOFILE}"
-					if [ "${DO_LOCK}" -eq 1 ]; then
-						echo "${RMVLOCK}" |${RSH} ${SSHKEYFLAG} ${TOHOST} "/bin/sh"
+					if [ "${DO_DONE}" -eq 1 ]; then
+						echo "${SETDONE}" |${RSH} ${SSHKEYFLAG} ${TOHOST} "/bin/sh"
 					fi
 				else
 					echo "${RSHDOIT}" |${RSH} ${SSHKEYFLAG} -l ${BACKUPUSER} ${TOHOST} "/bin/sh"
-					if [ "${DO_LOCK}" -eq 1 ]; then
-						echo "${SETLOCK}" |${RSH} ${SSHKEYFLAG} -l ${BACKUPUSER} ${TOHOST} "/bin/sh"
-					fi
 					/sbin/dump -${LEVEL}au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
 						|${RSH} -l ${BACKUPUSER} ${SSHKEYFLAG} ${TOHOST} "cat > ${TOFILE}"
-					if [ "${DO_LOCK}" -eq 1 ]; then
-						echo "${RMVLOCK}" |${RSH} ${SSHKEYFLAG} -l ${BACKUPUSER} ${TOHOST} "/bin/sh"
+					if [ "${DO_DONE}" -eq 1 ]; then
+						echo "${SETDONE}" |${RSH} ${SSHKEYFLAG} -l ${BACKUPUSER} ${TOHOST} "/bin/sh"
 					fi
 				fi
 			fi

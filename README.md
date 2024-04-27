@@ -15,11 +15,11 @@ Valid destinations can be
 ### Usage
 The following command line arguments apply:
 ```
-backup [-n] [-l] level
+backup [-d] [-l] level
 ```
 
+- `-d` creates a "done" file for signalling external programs that a certain file is finished and can be post-processed, e. g. written to tape.
 - `-n` prohibits ejecting of tape media.
-- `-l` creates a "lock" file for signalling external programs to not use that file (e. g. for writing to a tape drive).
 - `level` is the increment level, dump should use.
 
 If no level is submitted, it will be calculated from the weekday-number, which is incremented by one (so a full-backup has to be explicitly specified).
@@ -45,4 +45,4 @@ If `backup` finds a file named `.backup-todo` in the mountpoint which is to be d
 ----
 
 - 2011-09-11, PoC (initial version)
-- 2024-04-21, poc@pocnet.net (released to GitHub)
+- 2024-04-27, poc@pocnet.net (released to GitHub)
