@@ -59,7 +59,7 @@ unset NEXT_IS_END
 # Automatically determine the dump level.
 if [ -z "${1}" ]; then
 	LEVEL="$(date +%w)"
-	LEVEL=$(( LEVEL + 1 ))
+	LEVEL=$((LEVEL+1))
 else
 	LEVEL="${CMDLEVEL}"
 	unset CMDLEVEL
@@ -189,62 +189,66 @@ if [ -n "${TOPATH}" ]; then
 
 		# Now we can decide how to proceed
 		if [ "${DUMP}" -gt 0 ] && echo "${FSTYPE}" |grep '^ext[2-4]$'; then
+			# Calculate dump threshold.
+			DUMP_THRESH=$((DUMP-1))
 
-			# Set appropriate filename
-			LABEL="$(/sbin/e2label "${DEV}")"
-			if [ -z "${LABEL}" ]; then
-				if [ "${MOUNTPOINT}" = "/" ]; then
-					DIRNAME="root"
+			# Only dump if requested level is higher than fstab dump flag.
+			if [ "${LEVEL}" -ge "${DUMP_THRESH}" ]; then
+				# Set appropriate filename
+				LABEL="$(/sbin/e2label "${DEV}")"
+				if [ -z "${LABEL}" ]; then
+					if [ "${MOUNTPOINT}" = "/" ]; then
+						DIRNAME="root"
+					else
+						DIRNAME="$(echo "${MOUNTPOINT}" |sed 's#/#_#g' |cut -b 2-)"
+					fi
 				else
-					DIRNAME="$(echo "${MOUNTPOINT}" |sed 's#/#_#g' |cut -b 2-)"
+					DIRNAME="${LABEL}"
 				fi
-			else
-				DIRNAME="${LABEL}"
-			fi
-			TOFILE="${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}/dump-${LEVEL}-${DATE}"
+				TOFILE="${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}/dump-${LEVEL}-${DATE}"
 
 
-			# Look if there's any pre/post-work to do
-			if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
-				echo "  DUMP: .backup-todo found."
-				sh "${MOUNTPOINT}"/.backup-todo pre || echo "  DUMP: .backup-todo reported error."
-			fi
+				# Look if there's any pre/post-work to do
+				if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
+					echo "  DUMP: .backup-todo found."
+					sh "${MOUNTPOINT}"/.backup-todo pre || echo "  DUMP: .backup-todo reported error."
+				fi
 
 
-			RSHDOIT="test ! -d ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME} && mkdir -p ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}"
-			if [ "${DO_DONE}" -eq 1 ]; then
-				DONEFILE="${TOFILE}.done"
-				SETDONE="touch ${DONEFILE}"
-			fi
-			if [ "${TOHOST}" = "localhost" ] || [ -z "${TOHOST}" ]; then
-				bash -c "${RSHDOIT}"
-				/sbin/dump -"${LEVEL}"au "${COMPRESSFLAGS}" "${BLOCKSIZEFLAG}" -f "${TOFILE}" "${DEV}"
+				RSHDOIT="test ! -d ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME} && mkdir -p ${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}"
 				if [ "${DO_DONE}" -eq 1 ]; then
-					bash -c "${SETDONE}"
+					DONEFILE="${TOFILE}.done"
+					SETDONE="touch ${DONEFILE}"
 				fi
-			else
-				if [ -z "${BACKUPUSER}" ]; then
-					echo "${RSHDOIT}" |${RSH} "${SSHKEYFLAG}" "${TOHOST}" "/bin/sh"
-					/sbin/dump -"${LEVEL}"au "${COMPRESSFLAGS}" "${BLOCKSIZEFLAG}" -f - "${DEV}" \
-						|${RSH} "${SSHKEYFLAG}" "${TOHOST}" "cat > ${TOFILE}"
+				if [ "${TOHOST}" = "localhost" ] || [ -z "${TOHOST}" ]; then
+					bash -c "${RSHDOIT}"
+					/sbin/dump -"${LEVEL}"au "${COMPRESSFLAGS}" "${BLOCKSIZEFLAG}" -f "${TOFILE}" "${DEV}"
 					if [ "${DO_DONE}" -eq 1 ]; then
-						echo "${SETDONE}" |${RSH} "${SSHKEYFLAG}" "${TOHOST}" "/bin/sh"
+						bash -c "${SETDONE}"
 					fi
 				else
-					echo "${RSHDOIT}" |${RSH} "${SSHKEYFLAG}" -l "${BACKUPUSER}" "${TOHOST}" "/bin/sh"
-					/sbin/dump -"${LEVEL}"au "${COMPRESSFLAGS}" "${BLOCKSIZEFLAG}" -f - "${DEV}" \
-						|${RSH} -l "${BACKUPUSER}" "${SSHKEYFLAG}" "${TOHOST}" "cat > ${TOFILE}"
-					if [ "${DO_DONE}" -eq 1 ]; then
-						echo "${SETDONE}" |${RSH} "${SSHKEYFLAG}" -l "${BACKUPUSER}" "${TOHOST}" "/bin/sh"
+					if [ -z "${BACKUPUSER}" ]; then
+						echo "${RSHDOIT}" |${RSH} "${SSHKEYFLAG}" "${TOHOST}" "/bin/sh"
+						/sbin/dump -"${LEVEL}"au "${COMPRESSFLAGS}" "${BLOCKSIZEFLAG}" -f - "${DEV}" \
+							|${RSH} "${SSHKEYFLAG}" "${TOHOST}" "cat > ${TOFILE}"
+						if [ "${DO_DONE}" -eq 1 ]; then
+							echo "${SETDONE}" |${RSH} "${SSHKEYFLAG}" "${TOHOST}" "/bin/sh"
+						fi
+					else
+						echo "${RSHDOIT}" |${RSH} "${SSHKEYFLAG}" -l "${BACKUPUSER}" "${TOHOST}" "/bin/sh"
+						/sbin/dump -"${LEVEL}"au "${COMPRESSFLAGS}" "${BLOCKSIZEFLAG}" -f - "${DEV}" \
+							|${RSH} -l "${BACKUPUSER}" "${SSHKEYFLAG}" "${TOHOST}" "cat > ${TOFILE}"
+						if [ "${DO_DONE}" -eq 1 ]; then
+							echo "${SETDONE}" |${RSH} "${SSHKEYFLAG}" -l "${BACKUPUSER}" "${TOHOST}" "/bin/sh"
+						fi
 					fi
 				fi
-			fi
-			echo "  DUMP: ###############################################################"
+				echo "  DUMP: ###############################################################"
 
-			if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
-				sh "${MOUNTPOINT}"/.backup-todo post || echo "  DUMP: .backup-todo reported error."
+				if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
+					sh "${MOUNTPOINT}"/.backup-todo post || echo "  DUMP: .backup-todo reported error."
+				fi
 			fi
-
 		fi
 	done
 elif [ -n "${TAPEDEV}" ]; then
@@ -333,19 +337,25 @@ elif [ -n "${TAPEDEV}" ]; then
 
 		# Not we can decide how to proceed
 		if [ "${DUMP}" -gt 0 ] && echo "${FSTYPE}" |grep '^ext[2-4]$'; then
-			if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
-				echo "  DUMP: .backup-todo found."
-				sh "${MOUNTPOINT}"/.backup-todo pre || echo "  DUMP: .backup-todo reported error."
-			fi
-			if [ -z "${CHANGEDEV}" ]; then
-				/sbin/dump -"${LEVEL}"au -a "${BLOCKSIZEFLAG}" "${COMPRESSFLAGS}" "${DEV}"
-				echo "  DUMP: ###############################################################"
-			else
-				/sbin/dump -"${LEVEL}"au -a "${BLOCKSIZEFLAG}" "${COMPRESSFLAGS}" -F "${TMPFILE}" "${DEV}"
-				echo "  DUMP: ###############################################################"
-			fi
-			if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
-				sh "${MOUNTPOINT}"/.backup-todo post || echo "  DUMP: .backup-todo reported error."
+			# Calculate dump threshold.
+			DUMP_THRESH=$((DUMP-1))
+
+			# Only dump if requested level is higher than fstab dump flag.
+			if [ "${LEVEL}" -ge "${DUMP_THRESH}" ]; then
+				if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
+					echo "  DUMP: .backup-todo found."
+					sh "${MOUNTPOINT}"/.backup-todo pre || echo "  DUMP: .backup-todo reported error."
+				fi
+				if [ -z "${CHANGEDEV}" ]; then
+					/sbin/dump -"${LEVEL}"au -a "${BLOCKSIZEFLAG}" "${COMPRESSFLAGS}" "${DEV}"
+					echo "  DUMP: ###############################################################"
+				else
+					/sbin/dump -"${LEVEL}"au -a "${BLOCKSIZEFLAG}" "${COMPRESSFLAGS}" -F "${TMPFILE}" "${DEV}"
+					echo "  DUMP: ###############################################################"
+				fi
+				if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
+					sh "${MOUNTPOINT}"/.backup-todo post || echo "  DUMP: .backup-todo reported error."
+				fi
 			fi
 		fi
 	done
