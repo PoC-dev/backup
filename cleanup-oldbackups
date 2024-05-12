@@ -30,13 +30,13 @@ cd "${1}" || {
 }
 
 df -h .
-find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read HOSTDIR; do
-	if cd ${HOSTDIR}/dumps 2>/dev/null; then
-		find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read PARTDIR; do
-			cd ${PARTDIR}
-			LASTFULLFILE=`find . -type f -a -name "*dump-0-*.gz" -o -name "*dump-0-*" |cut -b 3- |sort |tail -1`
-			if [ ! -z "${LASTFULLFILE}" ]; then
-				find . -type f -a ! -newer ${LASTFULLFILE} -a ! -name ${LASTFULLFILE} -exec rm -f {} \;
+find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read -r HOSTDIR; do
+	if cd "${HOSTDIR}"/dumps 2>/dev/null; then
+		find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read -r PARTDIR; do
+			cd "${PARTDIR}" || continue
+			LASTFULLFILE="$(find . -type f -a -name "*dump-0-*.gz" -o -name "*dump-0-*" |cut -b 3- |sort |tail -1)"
+			if [ -n "${LASTFULLFILE}" ]; then
+				find . -type f -a ! -newer "${LASTFULLFILE}" -a ! -name "${LASTFULLFILE}" -exec rm -fv {} \;
 			fi
 			cd ../
 		done
