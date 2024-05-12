@@ -250,10 +250,12 @@ if [ -n "${TOPATH}" ]; then
 elif [ -n "${TAPEDEV}" ]; then
 	# Do tape based backup
 	if [ -n "${CHANGEDEV}" ]; then
-		# Do a self-contained tape change script
+		# Create a self-contained tape change script
 		TMPFILE=$(mktemp)
 		export TMPFILE
 		chmod +x "${TMPFILE}"
+		trap '{ rm -f "${TMPFILE}"; }' EXIT
+
 		if [ "${TOHOST}" = "localhost" ] || [ -z "${TOHOST}" ]; then
 			# For local tape device
 			cat > "${TMPFILE}" <<-EOF
@@ -364,11 +366,6 @@ elif [ -n "${TAPEDEV}" ]; then
 					echo "/usr/sbin/mtx -f ${CHANGEDEV} unload" |${RSH} "${REMOTEFLAGS}" "${TOHOST}" "/bin/sh"
 				fi
 			fi
-	fi
-
-	# Delete temps
-	if [ -n "${TMPFILE}" ]; then
-		rm -f "${TMPFILE}"
 	fi
 fi
 
