@@ -19,7 +19,7 @@ The dump-flag is used to decide which kind of backup to allow:
 - 3 mans level 2 and higher dumps are done automatically.
 - ...
 
-This is primarily meant for very large file systems with only few changes over prolonged time, such as archives. Doing level 0 dumps of those consumes a lot of time. If the dump-flag is set to 2 after an initial level 0 dump (with dump-flag=1), only small and quick differential backups to the last level 0 dump are done.
+This is primarily meant for very large file systems with only few changes over prolonged time, such as archives. Doing level 0 dumps of those consumes a lot of time. If the dump-flag is set to 2 after an initial level 0 dump (with dump-flag=1), only small and quick differential backups to the last level 0 dump are done, while automatic but explicit level 0 dumps are omitted.
 
 ### Usage
 The following command line arguments apply:
@@ -31,7 +31,7 @@ backup [-d] [-l] level
 - `-n` prohibits ejecting of tape media.
 - `level` is the increment level, dump should use.
 
-If no level is submitted, it will be calculated from the weekday-number, which is incremented by one (so a full-backup has to be explicitly specified).
+If no level is submitted, it will be calculated from the weekday's number, which is incremented by one (so a full-backup has to be explicitly specified).
 
 Other settings are pulled from a *preferences-file*. Backup looks for this file in the following order, searching for the most specific file first:
 - `~/.backuprc-${HOSTNAME}-${LEVEL}`
