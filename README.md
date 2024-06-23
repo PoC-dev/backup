@@ -14,9 +14,9 @@ Valid destinations can be
 
 The dump-flag is used to decide which kind of backup to allow:
 - 0 means no automatic backup.
-- 1 mans level 0 and higher dumps are done automatically.
-- 2 mans level 1 and higher dumps are done automatically.
-- 3 mans level 2 and higher dumps are done automatically.
+- 1 means level 0 and higher dumps are done automatically.
+- 2 means level 1 and higher dumps are done automatically.
+- 3 means level 2 and higher dumps are done automatically.
 - ...
 
 This is primarily meant for very large file systems with only few changes over prolonged time, such as archives. Doing level 0 dumps of those consumes a lot of time. If the dump-flag is set to 2 after an initial level 0 dump (with dump-flag=1), only small and quick differential backups to the last level 0 dump are done, while automatic but explicit level 0 dumps are omitted.
