@@ -205,7 +205,7 @@ if [ -n "${TOPATH}" ]; then
 				else
 					DIRNAME="${LABEL}"
 				fi
-				TOFILE="${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}/dump-${LEVEL}-${DATE}"
+				TOFILE="${TOPATH}/${HOSTNAME}/dumps/${DIRNAME}/${LEVEL}-${DATE}.dump"
 
 
 				# Look if there's any pre/post-work to do
@@ -380,4 +380,4 @@ elif [ -n "${TAPEDEV}" ]; then
 fi
 
 # EOF
-# vim:tabstop=4:shiftwidth=4:autoindent
+# vim: tabstop=4 shiftwidth=4 autoindent expandtab

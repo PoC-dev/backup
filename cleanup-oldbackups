@@ -30,19 +30,23 @@ cd "${1}" || {
 }
 
 df -h .
+echo
 find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read -r HOSTDIR; do
 	if cd "${HOSTDIR}"/dumps 2>/dev/null; then
-		find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read -r PARTDIR; do
-			cd "${PARTDIR}" || continue
-			LASTFULLFILE="$(find . -type f -a -name "*dump-0-*.gz" -o -name "*dump-0-*" |cut -b 3- |sort |tail -1)"
+		find . -maxdepth 1 -type d -print |sed 's/^.*\/\([^/]*\)$/\1/' |grep -v -e '^$' -e '^\.$' |while read -r MOUNTPOINTDIR; do
+			cd "${MOUNTPOINTDIR}" || continue
+			echo "${HOSTDIR}/${MOUNTPOINTDIR}:"
+			LASTFULLFILE="$(find . -type f -a -name "0-????????.dump" |cut -b 3- |sort |tail -1)"
 			if [ -n "${LASTFULLFILE}" ]; then
-				find . -type f -a ! -newer "${LASTFULLFILE}" -a ! -name "${LASTFULLFILE}" -exec rm -fv {} \;
+				find . -type f -a -name "?-????????.dump" -a ! -newer "${LASTFULLFILE}" -a ! -name "${LASTFULLFILE}" -exec rm -fv {} \;
 			fi
 			cd ../
 		done
 		cd ../../
 	fi
 done
+echo
 df -h .
 
-# -EOF-
+# EOF
+# vim: tabstop=4 shiftwidth=4 autoindent expandtab
