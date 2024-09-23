@@ -24,7 +24,7 @@ This is primarily meant for very large file systems with only few changes over p
 ### Usage
 The following command line arguments apply:
 ```
-backup [-d] [-l] level
+backup [-d] [-n] level
 ```
 
 - `-d` creates a "done" file for signalling external programs that a certain file is finished and can be post-processed, e. g. written to tape.
@@ -53,5 +53,4 @@ If `backup` finds a file named `.backup-todo` in the mountpoint which is to be d
 
 ----
 
-- 2011-09-11, PoC (initial version)
-- 2024-04-27, poc@pocnet.net (released to GitHub)
+- 2024-09-23, poc@pocnet.net
