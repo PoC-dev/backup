@@ -1,5 +1,5 @@
 ### What is it?
-Backup utilizes `dump(8)` for doing per-partition backups of ext2/ext3/ext4 filesystems to a given destination.
+Backup utilizes `dump(8)` for doing per-partition backups of ext2/ext3/ext4 filesystems to a given destination, and `xfsdump(8)` for doing per-partition backups of xfs filesystems to a given destination.
 
 Valid destinations can be
 - local tape device
@@ -10,7 +10,7 @@ Valid destinations can be
    - accessed via `rsh` (unencrypted, more CPU efficient)
    - accessed via `ssh` (encrypted, when transferring over the internet)
 
-`Backup` looks in */etc/fstab* for backupable partitions/file systems. These must be of type ext2, ext3 or or ext4, and the dump-flag be set to >0.
+`Backup` looks in */etc/fstab* for backupable partitions/file systems. These must be of type ext2, ext3, ext4, or xfs, and the dump-flag be set to >0.
 
 The dump-flag is used to decide which kind of backup to allow:
 - 0 means no automatic backup.
@@ -47,10 +47,10 @@ If `TAPEDEV` is set, backup assumes you're dumping to a tape device and takes ap
 
 Else if `TOPATH` is set, a directory structure will be created in `${TOPATH}`. This is a workaround, since `rmt` cannot create files itself. You may use `cleanup-oldbackups` to remove outdated backups: Everything which is older than the newest level-0 backup.
 
-`Backup` uses the ext2 partition label (see `e2label(8)`) for creating the pathes. It is a good advice to check if these are consistent with your intended use. Also, `e2label` needs to access not only the device file, but also the mount path. If the user running this script is not allowed to read the mountpoint, `e2label` fails and the backup file name will be derived by the mountpoint name.
+`Backup` uses the filesystem label (see `e2label(8)` and `xfs_admin -l`) for creating the paths. It is a good advice to check if these are consistent with your intended use. Also, at least `e2label` needs to access not only the device file, but also the mount path. If the user running this script is not allowed to read the mountpoint, `e2label` fails and the backup file name will be derived by the mountpoint name. Same goes very likely for xfs filesystem labels.
 
 If `backup` finds a file named `.backup-todo` in the mountpoint which is to be dumped, it will be executed with parameters pre and post. This is especially useful for backing up a mysql-database (which should reside on a partition for itself then) which needs to be writelocked as long as the backup runs. Also this can be used for hibernating Qemu VMs.
 
 ----
 
-- 2024-09-23, poc@pocnet.net
+- 2026-01-16, poc@pocnet.net

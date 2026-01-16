@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2004-2024 poc@pocnet.net
+# Copyright 2004-2026 poc@pocnet.net
 #
 # This file is for making backups of Linux boxen onto another host.
 #
@@ -188,14 +188,18 @@ if [ -n "${TOPATH}" ]; then
 		fi
 
 		# Now we can decide how to proceed
-		if [ "${DUMP}" -gt 0 ] && echo "${FSTYPE}" |grep -q '^ext[2-4]$'; then
+		if [ "${DUMP}" -gt 0 ] && echo "${FSTYPE}" |grep -Eq '^(ext[2-4]|xfs)$'; then
 			# Calculate dump threshold.
 			DUMP_THRESH=$((DUMP-1))
 
 			# Only dump if requested level is higher than fstab dump flag.
 			if [ "${LEVEL}" -ge "${DUMP_THRESH}" ]; then
 				# Set appropriate filename
-				LABEL="$(/sbin/e2label "${DEV}")"
+                if echo "${FSTYPE}" |grep -Eq '^ext[2-4]$'; then 
+                    LABEL="$(/sbin/e2label "${DEV}")"
+                elif echo "${FSTYPE}" |grep -Eq '^xfs$'; then 
+                    LABEL="$(/sbin/xfs_admin -l "${DEV}" |sed -E 's/^label = "([[:print:]]*)"$/\1/')"
+                fi
 				if [ -z "${LABEL}" ]; then
 					if [ "${MOUNTPOINT}" = "/" ]; then
 						DIRNAME="root"
@@ -222,22 +226,36 @@ if [ -n "${TOPATH}" ]; then
 				fi
 				if [ "${TOHOST}" = "localhost" ] || [ -z "${TOHOST}" ]; then
 					bash -c "${RSHDOIT}"
-					/sbin/dump -"${LEVEL}"au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f "${TOFILE}" "${DEV}"
+                    if echo "${FSTYPE}" |grep -Eq '^ext[2-4]$'; then 
+                        /sbin/dump -"${LEVEL}"au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f "${TOFILE}" "${DEV}"
+                    elif echo "${FSTYPE}" |grep -Eq '^xfs$'; then 
+                        /sbin/xfsdump -m -l "${LEVEL}" ${BLOCKSIZEFLAG} -f "${TOFILE}" "${DEV}"
+                    fi
 					if [ "${DO_DONE}" -eq 1 ]; then
 						bash -c "${SETDONE}"
 					fi
 				else
 					if [ -z "${BACKUPUSER}" ]; then
 						echo "${RSHDOIT}" |${RSH} ${SSHKEYFLAG} "${TOHOST}" "/bin/sh"
-						/sbin/dump -"${LEVEL}"au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
-							|${RSH} ${SSHKEYFLAG} "${TOHOST}" "cat > ${TOFILE}"
+                        if echo "${FSTYPE}" |grep -Eq '^ext[2-4]$'; then 
+                            /sbin/dump -"${LEVEL}"au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
+                                |${RSH} ${SSHKEYFLAG} "${TOHOST}" "cat > ${TOFILE}"
+                        elif echo "${FSTYPE}" |grep -Eq '^xfs$'; then 
+                            /sbin/xfsdump -m -l "${LEVEL}" ${BLOCKSIZEFLAG} - "${DEV}" \
+                                |${RSH} ${SSHKEYFLAG} "${TOHOST}" "cat > ${TOFILE}"
+                        fi
 						if [ "${DO_DONE}" -eq 1 ]; then
 							echo "${SETDONE}" |${RSH} ${SSHKEYFLAG} "${TOHOST}" "/bin/sh"
 						fi
 					else
 						echo "${RSHDOIT}" |${RSH} ${SSHKEYFLAG} -l "${BACKUPUSER}" "${TOHOST}" "/bin/sh"
-						/sbin/dump -"${LEVEL}"au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
-							|${RSH} -l "${BACKUPUSER}" ${SSHKEYFLAG} "${TOHOST}" "cat > ${TOFILE}"
+                        if echo "${FSTYPE}" |grep -Eq '^ext[2-4]$'; then 
+                            /sbin/dump -"${LEVEL}"au ${COMPRESSFLAGS} ${BLOCKSIZEFLAG} -f - "${DEV}" \
+                                |${RSH} -l "${BACKUPUSER}" ${SSHKEYFLAG} "${TOHOST}" "cat > ${TOFILE}"
+                        elif echo "${FSTYPE}" |grep -Eq '^xfs$'; then 
+                            /sbin/xfsdump -m -l "${LEVEL}" ${BLOCKSIZEFLAG} - "${DEV}" \
+                                |${RSH} -l "${BACKUPUSER}" ${SSHKEYFLAG} "${TOHOST}" "cat > ${TOFILE}"
+                        fi
 						if [ "${DO_DONE}" -eq 1 ]; then
 							echo "${SETDONE}" |${RSH} ${SSHKEYFLAG} -l "${BACKUPUSER}" "${TOHOST}" "/bin/sh"
 						fi
@@ -336,7 +354,7 @@ elif [ -n "${TAPEDEV}" ]; then
 		fi
 
 		# Not we can decide how to proceed
-		if [ "${DUMP}" -gt 0 ] && echo "${FSTYPE}" |grep -q '^ext[2-4]$'; then
+		if [ "${DUMP}" -gt 0 ] && echo "${FSTYPE}" |grep -Eq '^(ext[2-4]|xfs)$'; then
 			# Calculate dump threshold.
 			DUMP_THRESH=$((DUMP-1))
 
@@ -347,11 +365,19 @@ elif [ -n "${TAPEDEV}" ]; then
 					sh "${MOUNTPOINT}"/.backup-todo pre || echo "  DUMP: .backup-todo reported error."
 				fi
 				if [ -z "${CHANGEDEV}" ]; then
-					/sbin/dump -"${LEVEL}"au -a ${BLOCKSIZEFLAG} ${COMPRESSFLAGS} "${DEV}"
-					echo "  DUMP: ###############################################################"
+                    if echo "${FSTYPE}" |grep -Eq '^ext[2-4]$'; then 
+                        /sbin/dump -"${LEVEL}"au -a ${BLOCKSIZEFLAG} ${COMPRESSFLAGS} "${DEV}"
+                        echo "  DUMP: ###############################################################"
+                    elif echo "${FSTYPE}" |grep -Eq '^xfs$'; then 
+                        /sbin/xfsdump -l "${LEVEL}" ${BLOCKSIZEFLAG} -f "${TAPE}" "${DEV}"
+                    fi
 				else
-					/sbin/dump -"${LEVEL}"au -a ${BLOCKSIZEFLAG} ${COMPRESSFLAGS} -F "${TMPFILE}" "${DEV}"
-					echo "  DUMP: ###############################################################"
+                    if echo "${FSTYPE}" |grep -Eq '^ext[2-4]$'; then 
+                        /sbin/dump -"${LEVEL}"au -a ${BLOCKSIZEFLAG} ${COMPRESSFLAGS} -c "${TMPFILE}" "${DEV}"
+                        echo "  DUMP: ###############################################################"
+                    elif echo "${FSTYPE}" |grep -Eq '^xfs$'; then 
+                        /sbin/xfsdump -l "${LEVEL}" ${BLOCKSIZEFLAG} -f "${TAPE}" "${DEV}"
+                    fi
 				fi
 				if [ -f "${MOUNTPOINT}"/.backup-todo ]; then
 					sh "${MOUNTPOINT}"/.backup-todo post || echo "  DUMP: .backup-todo reported error."
