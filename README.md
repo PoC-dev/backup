@@ -41,7 +41,7 @@ Other settings are pulled from a *preferences-file*. Backup looks for this file 
 
 This enables using different settings depending on the hostname and/or increment level as well as one common backup user within a NIS/NFS environment. Backup tells you at startup which file it is using. See example file for the variables.
 
-The variables are commented in dot-backuprc-sample and reasonably self-explanatory.
+The variables are commented in dot-backuprc-sample and reasonably self-explanatory. As shown above, it must be copied to the home directory of the user who is running the backup script itself. Nost likely, this is /root/.backuprc.
 
 If `TAPEDEV` is set, backup assumes you're dumping to a tape device and takes appropriate measures for setting 64k blocks and unlimited filesize. Doing online compression is considered bad habit, especially on slow CPUs. Using ssh in LAN environments for feeding tape drives is also considered "please avoid" — it creates unneccessary load on the CPU and overhead over the network, potentially resulting on unneccessary stop-and-go of the tape drive.
 
@@ -53,4 +53,4 @@ If `backup` finds a file named `.backup-todo` in the mountpoint which is to be d
 
 ----
 
-- 2026-01-16, poc@pocnet.net
+- 2026-01-17, poc@pocnet.net

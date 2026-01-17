@@ -1,5 +1,5 @@
 # To which host should we dump.
-TOHOST=leela.pocnet.net
+TOHOST=destination.example.com
 # Basepath under which we lay out our structure (make it as short as possible!)
 TOPATH=/home/remback
 # Which command should be used for dumping. Choose from rsh (or empty) and ssh.
